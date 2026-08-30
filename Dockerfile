@@ -1,30 +1,24 @@
-# PocketBase for FileHog (homelab photo dump)
-FROM alpine:3.21
+FROM alpine:latest
 
 ARG PB_VERSION=0.40.1
 
 RUN apk add --no-cache \
-        ca-certificates \
-        unzip \
-        curl \
-        tzdata \
-    && update-ca-certificates
+    ca-certificates \
+    unzip \
+    wget \
+    zip
 
 ADD https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_amd64.zip /tmp/pb.zip
-
-RUN unzip /tmp/pb.zip -d /app/ \
-    && chmod +x /app/pocketbase \
+RUN unzip /tmp/pb.zip -d /pb/ \
     && rm /tmp/pb.zip \
-    && mkdir -p /app/pb_data /app/pb_migrations /app/pb_public
+    && chmod +x /pb/pocketbase
 
-WORKDIR /app
+COPY ./pb_public /pb/pb_public
+COPY ./pb_migrations /pb/pb_migrations
 
-COPY docker/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+WORKDIR /pb
+VOLUME ["/pb/pb_data"]
 
-EXPOSE 8090
+EXPOSE 8080
 
-VOLUME ["/app/pb_data"]
-
-ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["serve", "--http=0.0.0.0:8090"]
+CMD ["/pb/pocketbase", "serve", "--http=0.0.0.0:8080"]
