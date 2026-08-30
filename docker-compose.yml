@@ -1,0 +1,21 @@
+services:
+  pocketbase:
+    build: .
+    container_name: filehog-pb
+    restart: unless-stopped
+    ports:
+      - "${PB_PORT:-8090}:8090"
+    environment:
+      # Optional: auto-create admin on first boot
+      PB_ADMIN_EMAIL: ${PB_ADMIN_EMAIL:-}
+      PB_ADMIN_PASSWORD: ${PB_ADMIN_PASSWORD:-}
+    volumes:
+      - ./pb_data:/app/pb_data
+      - ./pb_migrations:/app/pb_migrations:ro
+      - ./pb_public:/app/pb_public:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8090/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
