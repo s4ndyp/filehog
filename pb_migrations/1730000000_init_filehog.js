@@ -2,7 +2,7 @@
 migrate((app) => {
   const settings = app.settings()
   settings.meta.appName = "FileHog"
-  settings.meta.appURL = "http://127.0.0.1:8090"
+
   app.save(settings)
 
   const tags = new Collection({
