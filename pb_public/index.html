@@ -1,1 +1,901 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#12151a" />
+  <title>FileHog</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: { DEFAULT: "#12151a", soft: "#1a1f27", mid: "#252b36", line: "#333b4a" },
+            paper: { DEFAULT: "#ebe6dc", muted: "#9a9488", dim: "#6b665c" },
+            copper: { DEFAULT: "#c97840", hot: "#e08a4f", deep: "#9a5a2c" },
+            moss: { DEFAULT: "#6f8f7a", soft: "#8aab94" },
+          },
+          fontFamily: {
+            display: ['"Syne"', "system-ui", "sans-serif"],
+            sans: ['"Source Sans 3"', "system-ui", "sans-serif"],
+          },
+          boxShadow: {
+            glow: "0 0 40px rgba(201, 120, 64, 0.18)",
+          },
+          keyframes: {
+            rise: {
+              "0%": { opacity: "0", transform: "translateY(12px)" },
+              "100%": { opacity: "1", transform: "translateY(0)" },
+            },
+            pulseDot: {
+              "0%, 100%": { opacity: "1", transform: "scale(1)" },
+              "50%": { opacity: "0.45", transform: "scale(0.85)" },
+            },
+            shimmer: {
+              "0%": { backgroundPosition: "200% 0" },
+              "100%": { backgroundPosition: "-200% 0" },
+            },
+          },
+          animation: {
+            rise: "rise 0.45s ease-out both",
+            "pulse-dot": "pulseDot 1.6s ease-in-out infinite",
+            shimmer: "shimmer 1.4s linear infinite",
+          },
+        },
+      },
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+  <style>
+    :root {
+      --ink: #12151a;
+      --copper: #c97840;
+    }
+    html, body {
+      background: var(--ink);
+      color: #ebe6dc;
+      font-family: "Source Sans 3", system-ui, sans-serif;
+    }
+    body {
+      min-height: 100dvh;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 10% -10%, rgba(201, 120, 64, 0.16), transparent 55%),
+        radial-gradient(ellipse 60% 40% at 90% 0%, rgba(111, 143, 122, 0.12), transparent 50%),
+        linear-gradient(180deg, #12151a 0%, #161b22 40%, #12151a 100%);
+      background-attachment: fixed;
+    }
+    .grain::before {
+      content: "";
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      opacity: 0.04;
+      z-index: 50;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    [x-cloak] { display: none !important; }
+    .masonry {
+      columns: 1;
+      column-gap: 0.75rem;
+    }
+    @media (min-width: 640px) { .masonry { columns: 2; } }
+    @media (min-width: 1024px) { .masonry { columns: 3; } }
+    @media (min-width: 1400px) { .masonry { columns: 4; } }
+    .masonry-item {
+      break-inside: avoid;
+      margin-bottom: 0.75rem;
+    }
+    .thumb-check {
+      box-shadow: inset 0 0 0 2px rgba(201, 120, 64, 0.9);
+    }
+    input[type="file"] { display: none; }
+    .tag-chip {
+      transition: background 0.15s ease, transform 0.15s ease;
+    }
+    .tag-chip:active { transform: scale(0.96); }
+    .skeleton {
+      background: linear-gradient(90deg, #1a1f27 25%, #252b36 50%, #1a1f27 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s linear infinite;
+    }
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    .scroll-thin::-webkit-scrollbar { height: 6px; width: 6px; }
+    .scroll-thin::-webkit-scrollbar-thumb { background: #333b4a; border-radius: 999px; }
+  </style>
+</head>
+<body class="grain antialiased" x-data="filehog()" x-init="init()" x-cloak>
+  <!-- Header -->
+  <header class="sticky top-0 z-40 border-b border-ink-line/60 bg-ink/80 backdrop-blur-md">
+    <div class="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-baseline gap-2">
+          <h1 class="font-display text-2xl font-800 tracking-tight text-paper sm:text-3xl">FileHog</h1>
+          <span class="hidden text-xs uppercase tracking-[0.2em] text-paper-dim sm:inline">homelab dump</span>
+        </div>
+        <p class="mt-0.5 flex items-center gap-2 text-xs text-paper-muted">
+          <span class="inline-flex h-1.5 w-1.5 rounded-full bg-moss" :class="live ? 'animate-pulse-dot bg-moss' : 'bg-paper-dim'"></span>
+          <span x-text="live ? 'Live · updates binnenkomen' : 'Offline · geen verbinding'"></span>
+          <span class="text-ink-line">·</span>
+          <span x-text="filtered.length + ' foto' + (filtered.length === 1 ? '' : \"'s\")"></span>
+        </p>
+      </div>
+      <button
+        type="button"
+        @click="showSettings = true"
+        class="rounded-lg border border-ink-line px-3 py-2 text-sm text-paper-muted transition hover:border-paper-dim hover:text-paper"
+        title="Instellingen"
+      >
+        Server
+      </button>
+      <button
+        type="button"
+        @click="openUploader()"
+        class="rounded-lg bg-copper px-4 py-2 font-display text-sm font-700 text-ink shadow-glow transition hover:bg-copper-hot"
+      >
+        + Upload
+      </button>
+    </div>
+  </header>
 
+  <main class="mx-auto max-w-7xl px-4 pb-28 pt-5 sm:px-6">
+    <!-- Filters -->
+    <section class="mb-5 animate-rise" style="animation-delay: 0.05s">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div class="relative flex-1">
+          <input
+            type="search"
+            x-model.debounce.200ms="query"
+            placeholder="Zoek op titel, tag of datum…"
+            class="w-full rounded-xl border border-ink-line bg-ink-soft px-4 py-2.5 text-sm text-paper outline-none ring-copper/40 placeholder:text-paper-dim focus:border-copper focus:ring-2"
+          />
+        </div>
+        <div class="flex gap-2">
+          <select
+            x-model="dateFilter"
+            class="rounded-xl border border-ink-line bg-ink-soft px-3 py-2.5 text-sm text-paper outline-none focus:border-copper"
+          >
+            <option value="all">Alle data</option>
+            <option value="today">Vandaag</option>
+            <option value="7d">Laatste 7 dagen</option>
+            <option value="30d">Laatste 30 dagen</option>
+          </select>
+          <button
+            type="button"
+            @click="viewMode = viewMode === 'grid' ? 'timeline' : 'grid'"
+            class="rounded-xl border border-ink-line bg-ink-soft px-3 py-2.5 text-sm text-paper-muted transition hover:text-paper"
+            x-text="viewMode === 'grid' ? 'Tijdlijn' : 'Raster'"
+          ></button>
+        </div>
+      </div>
+
+      <div class="mt-3 flex gap-2 overflow-x-auto scroll-thin pb-1" x-show="tags.length">
+        <button
+          type="button"
+          @click="activeTag = null"
+          class="tag-chip shrink-0 rounded-lg px-3 py-1.5 text-sm"
+          :class="!activeTag ? 'bg-copper text-ink font-600' : 'bg-ink-mid text-paper-muted hover:text-paper'"
+        >
+          Alles
+        </button>
+        <template x-for="tag in tags" :key="tag.id">
+          <button
+            type="button"
+            @click="activeTag = activeTag === tag.id ? null : tag.id"
+            class="tag-chip shrink-0 rounded-lg px-3 py-1.5 text-sm"
+            :class="activeTag === tag.id ? 'bg-copper text-ink font-600' : 'bg-ink-mid text-paper-muted hover:text-paper'"
+            :style="activeTag !== tag.id && tag.color ? `box-shadow: inset 3px 0 0 ${tag.color}` : ''"
+            x-text="tag.name"
+          ></button>
+        </template>
+      </div>
+    </section>
+
+    <!-- Batch bar -->
+    <div
+      x-show="selected.size > 0"
+      x-transition
+      class="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-copper/40 bg-ink-soft/90 px-3 py-2.5 shadow-glow"
+    >
+      <span class="text-sm font-600 text-copper" x-text="selected.size + ' geselecteerd'"></span>
+      <div class="flex-1"></div>
+      <button type="button" @click="openBatch('rename')" class="rounded-lg bg-ink-mid px-3 py-1.5 text-sm hover:bg-ink-line">Hernoemen</button>
+      <button type="button" @click="openBatch('tags')" class="rounded-lg bg-ink-mid px-3 py-1.5 text-sm hover:bg-ink-line">Tags</button>
+      <button type="button" @click="deleteSelected()" class="rounded-lg bg-ink-mid px-3 py-1.5 text-sm text-red-300 hover:bg-ink-line">Verwijderen</button>
+      <button type="button" @click="clearSelection()" class="rounded-lg px-3 py-1.5 text-sm text-paper-muted hover:text-paper">Annuleren</button>
+    </div>
+
+    <!-- Error -->
+    <div x-show="error" class="mb-4 rounded-xl border border-red-500/40 bg-red-950/40 px-4 py-3 text-sm text-red-200" x-text="error"></div>
+
+    <!-- Loading -->
+    <div x-show="loading" class="masonry">
+      <template x-for="i in 6" :key="i">
+        <div class="masonry-item skeleton h-48 rounded-xl"></div>
+      </template>
+    </div>
+
+    <!-- Empty -->
+    <div x-show="!loading && filtered.length === 0" class="animate-rise rounded-2xl border border-dashed border-ink-line px-6 py-16 text-center">
+      <p class="font-display text-2xl font-700 text-paper">Nog geen foto's</p>
+      <p class="mt-2 text-sm text-paper-muted">Open FileHog op je telefoon, maak een foto, geef een tag — en zie 'm hier binnenkomen.</p>
+      <button type="button" @click="openUploader()" class="mt-6 rounded-lg bg-copper px-5 py-2.5 font-display text-sm font-700 text-ink hover:bg-copper-hot">Eerste foto uploaden</button>
+    </div>
+
+    <!-- Grid view -->
+    <section x-show="!loading && filtered.length && viewMode === 'grid'" class="masonry">
+      <template x-for="(photo, idx) in filtered" :key="photo.id">
+        <article
+          class="masonry-item group relative overflow-hidden rounded-xl bg-ink-soft animate-rise"
+          :style="`animation-delay: ${Math.min(idx, 12) * 0.03}s`"
+          :class="selected.has(photo.id) ? 'thumb-check' : ''"
+        >
+          <button type="button" class="block w-full text-left" @click="onPhotoClick(photo, $event)">
+            <img
+              :src="thumbUrl(photo)"
+              :alt="photo.title"
+              loading="lazy"
+              class="w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+            />
+            <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink/90 via-transparent to-transparent opacity-90"></div>
+            <div class="absolute inset-x-0 bottom-0 p-3">
+              <p class="truncate font-display text-sm font-700 text-paper" x-text="photo.title"></p>
+              <p class="mt-0.5 text-xs text-paper-muted" x-text="formatWhen(photo)"></p>
+              <div class="mt-1.5 flex flex-wrap gap-1">
+                <template x-for="t in photoTags(photo)" :key="t.id">
+                  <span class="rounded bg-ink/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-copper" x-text="t.name"></span>
+                </template>
+              </div>
+            </div>
+          </button>
+          <label class="absolute left-2 top-2 flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-ink-line/80 bg-ink/70 text-xs backdrop-blur-sm">
+            <input type="checkbox" class="accent-copper" :checked="selected.has(photo.id)" @click.stop="toggleSelect(photo.id)" />
+          </label>
+          <button
+            type="button"
+            @click.stop="openLightbox(photo)"
+            class="absolute right-2 top-2 rounded-md border border-ink-line/80 bg-ink/70 px-2 py-1 text-xs text-paper-muted opacity-0 backdrop-blur-sm transition group-hover:opacity-100 hover:text-paper"
+          >
+            Open
+          </button>
+        </article>
+      </template>
+    </section>
+
+    <!-- Timeline view -->
+    <section x-show="!loading && filtered.length && viewMode === 'timeline'" class="space-y-8">
+      <template x-for="group in timelineGroups" :key="group.key">
+        <div class="animate-rise">
+          <h2 class="mb-3 font-display text-lg font-700 text-paper" x-text="group.label"></h2>
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            <template x-for="photo in group.items" :key="photo.id">
+              <button
+                type="button"
+                @click="onPhotoClick(photo, $event)"
+                class="group relative aspect-square overflow-hidden rounded-lg bg-ink-soft"
+                :class="selected.has(photo.id) ? 'thumb-check' : ''"
+              >
+                <img :src="thumbUrl(photo, '200x200')" :alt="photo.title" loading="lazy" class="h-full w-full object-cover" />
+                <span class="absolute inset-x-0 bottom-0 truncate bg-ink/70 px-1.5 py-1 text-[10px] text-paper" x-text="photo.title"></span>
+              </button>
+            </template>
+          </div>
+        </div>
+      </template>
+    </section>
+  </main>
+
+  <!-- Mobile FAB -->
+  <button
+    type="button"
+    @click="openUploader(true)"
+    class="fixed bottom-5 right-5 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-copper font-display text-2xl font-800 text-ink shadow-glow transition hover:bg-copper-hot sm:hidden"
+    aria-label="Foto maken"
+  >
+    ⊕
+  </button>
+
+  <!-- Uploader modal -->
+  <div x-show="showUpload" class="fixed inset-0 z-50 flex items-end justify-center sm:items-center" @keydown.escape.window="showUpload = false">
+    <div class="absolute inset-0 bg-ink/80 backdrop-blur-sm" @click="showUpload = false"></div>
+    <div class="relative max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-ink-line bg-ink-soft p-5 shadow-glow sm:rounded-2xl animate-rise" @click.stop>
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="font-display text-xl font-700">Nieuwe dump</h2>
+        <button type="button" @click="showUpload = false" class="text-paper-muted hover:text-paper">Sluiten</button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <label class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-ink-line bg-ink px-3 py-6 text-center transition hover:border-copper">
+          <span class="font-display text-sm font-700 text-copper">Camera</span>
+          <span class="text-xs text-paper-dim">Maak direct een foto</span>
+          <input type="file" accept="image/*" capture="environment" @change="onFiles($event)" />
+        </label>
+        <label class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-ink-line bg-ink px-3 py-6 text-center transition hover:border-copper">
+          <span class="font-display text-sm font-700 text-moss">Bibliotheek</span>
+          <span class="text-xs text-paper-dim">Kies bestaande foto's</span>
+          <input type="file" accept="image/*" multiple @change="onFiles($event)" />
+        </label>
+      </div>
+
+      <div x-show="pending.length" class="mt-4 space-y-3">
+        <template x-for="(item, i) in pending" :key="item.key">
+          <div class="rounded-xl border border-ink-line bg-ink p-3">
+            <div class="flex gap-3">
+              <img :src="item.preview" class="h-16 w-16 rounded-lg object-cover" alt="" />
+              <div class="min-w-0 flex-1">
+                <input
+                  type="text"
+                  x-model="item.title"
+                  class="w-full rounded-lg border border-ink-line bg-ink-soft px-2 py-1.5 text-sm outline-none focus:border-copper"
+                  placeholder="Titel"
+                />
+                <p class="mt-1 text-[11px] text-paper-dim" x-text="item.metaLabel"></p>
+              </div>
+              <button type="button" @click="pending.splice(i, 1)" class="text-xs text-paper-dim hover:text-red-300">×</button>
+            </div>
+          </div>
+        </template>
+
+        <div>
+          <label class="mb-1 block text-xs uppercase tracking-wider text-paper-dim">Tags voor deze batch</label>
+          <div class="flex flex-wrap gap-1.5">
+            <template x-for="tag in tags" :key="'u-' + tag.id">
+              <button
+                type="button"
+                @click="toggleUploadTag(tag.id)"
+                class="tag-chip rounded-lg px-2.5 py-1 text-xs"
+                :class="uploadTagIds.includes(tag.id) ? 'bg-copper text-ink font-600' : 'bg-ink-mid text-paper-muted'"
+                x-text="tag.name"
+              ></button>
+            </template>
+          </div>
+          <div class="mt-2 flex gap-2">
+            <input
+              type="text"
+              x-model="newTagName"
+              @keydown.enter.prevent="createAndSelectTag()"
+              placeholder="Nieuwe tag…"
+              class="flex-1 rounded-lg border border-ink-line bg-ink px-3 py-2 text-sm outline-none focus:border-copper"
+            />
+            <button type="button" @click="createAndSelectTag()" class="rounded-lg bg-ink-mid px-3 py-2 text-sm hover:bg-ink-line">+ Tag</button>
+          </div>
+        </div>
+
+        <label class="flex items-center gap-2 text-sm text-paper-muted">
+          <input type="checkbox" class="accent-copper" x-model="compress" />
+          Comprimeer tot max <span class="text-paper" x-text="maxWidth + 'px'"></span>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-paper-muted" x-show="compress">
+          <input type="checkbox" class="accent-copper" x-model="keepOriginal" />
+          Bewaar ook het origineel
+        </label>
+
+        <button
+          type="button"
+          @click="uploadAll()"
+          :disabled="uploading || !pending.length"
+          class="w-full rounded-xl bg-copper py-3 font-display font-700 text-ink transition hover:bg-copper-hot disabled:opacity-50"
+          x-text="uploading ? ('Uploaden… ' + uploadProgress) : ('Upload ' + pending.length + ' foto' + (pending.length === 1 ? '' : \"'s\"))"
+        ></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch modal -->
+  <div x-show="showBatch" class="fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.escape.window="showBatch = false">
+    <div class="absolute inset-0 bg-ink/80 backdrop-blur-sm" @click="showBatch = false"></div>
+    <div class="relative w-full max-w-md rounded-2xl border border-ink-line bg-ink-soft p-5 animate-rise" @click.stop>
+      <h2 class="font-display text-xl font-700" x-text="batchMode === 'rename' ? 'Batch hernoemen' : 'Tags toevoegen'"></h2>
+      <template x-if="batchMode === 'rename'">
+        <div class="mt-4 space-y-3">
+          <input type="text" x-model="batchTitle" placeholder="Nieuwe titel (of prefix)" class="w-full rounded-lg border border-ink-line bg-ink px-3 py-2 text-sm outline-none focus:border-copper" />
+          <label class="flex items-center gap-2 text-sm text-paper-muted">
+            <input type="checkbox" class="accent-copper" x-model="batchTitleNumber" />
+            Nummer toevoegen (titel-1, titel-2, …)
+          </label>
+        </div>
+      </template>
+      <template x-if="batchMode === 'tags'">
+        <div class="mt-4 space-y-2">
+          <div class="flex flex-wrap gap-1.5">
+            <template x-for="tag in tags" :key="'b-' + tag.id">
+              <button
+                type="button"
+                @click="toggleBatchTag(tag.id)"
+                class="tag-chip rounded-lg px-2.5 py-1 text-xs"
+                :class="batchTagIds.includes(tag.id) ? 'bg-copper text-ink font-600' : 'bg-ink-mid text-paper-muted'"
+                x-text="tag.name"
+              ></button>
+            </template>
+          </div>
+          <input type="text" x-model="newTagName" @keydown.enter.prevent="createAndSelectBatchTag()" placeholder="Nieuwe tag…" class="w-full rounded-lg border border-ink-line bg-ink px-3 py-2 text-sm outline-none focus:border-copper" />
+        </div>
+      </template>
+      <div class="mt-5 flex justify-end gap-2">
+        <button type="button" @click="showBatch = false" class="rounded-lg px-3 py-2 text-sm text-paper-muted">Annuleren</button>
+        <button type="button" @click="applyBatch()" class="rounded-lg bg-copper px-4 py-2 font-display text-sm font-700 text-ink">Toepassen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox -->
+  <div x-show="lightbox" class="fixed inset-0 z-50 flex flex-col bg-ink/95" @keydown.escape.window="lightbox = null">
+    <div class="flex items-center justify-between border-b border-ink-line px-4 py-3">
+      <div class="min-w-0">
+        <p class="truncate font-display font-700" x-text="lightbox?.title"></p>
+        <p class="text-xs text-paper-muted" x-text="lightbox ? formatWhen(lightbox, true) : ''"></p>
+      </div>
+      <button type="button" @click="lightbox = null" class="rounded-lg border border-ink-line px-3 py-1.5 text-sm">Sluiten</button>
+    </div>
+    <div class="flex flex-1 items-center justify-center p-4">
+      <img x-show="lightbox" :src="lightbox ? fileUrl(lightbox) : ''" :alt="lightbox?.title" class="max-h-full max-w-full object-contain" />
+    </div>
+    <div class="border-t border-ink-line px-4 py-3 text-xs text-paper-muted" x-show="lightbox">
+      <span x-text="lightboxMeta()"></span>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div x-show="showSettings" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-ink/80 backdrop-blur-sm" @click="showSettings = false"></div>
+    <div class="relative w-full max-w-md rounded-2xl border border-ink-line bg-ink-soft p-5 animate-rise" @click.stop>
+      <h2 class="font-display text-xl font-700">Server</h2>
+      <p class="mt-1 text-sm text-paper-muted">PocketBase-URL. Laat leeg voor dezelfde origin (aanbevolen via Docker).</p>
+      <input type="url" x-model="pbUrl" placeholder="http://192.168.x.x:8090" class="mt-4 w-full rounded-lg border border-ink-line bg-ink px-3 py-2 text-sm outline-none focus:border-copper" />
+      <label class="mt-3 flex items-center gap-2 text-sm text-paper-muted">
+        Max breedte compressie
+        <input type="number" min="640" max="4096" step="80" x-model.number="maxWidth" class="ml-auto w-24 rounded-lg border border-ink-line bg-ink px-2 py-1 text-sm" />
+      </label>
+      <div class="mt-5 flex justify-end gap-2">
+        <button type="button" @click="showSettings = false" class="rounded-lg px-3 py-2 text-sm text-paper-muted">Annuleren</button>
+        <button type="button" @click="saveSettings()" class="rounded-lg bg-copper px-4 py-2 font-display text-sm font-700 text-ink">Opslaan & herladen</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import PocketBase from "https://cdn.jsdelivr.net/npm/pocketbase@0.28.0/dist/pocketbase.es.mjs";
+
+    const STORAGE_KEY = "filehog.settings.v1";
+    const TAG_COLORS = ["#c97840", "#6f8f7a", "#5b7c99", "#b45a6a", "#8a7a4a", "#6a6a8a"];
+
+    function loadSettings() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+      } catch {
+        return {};
+      }
+    }
+
+    window.filehog = function filehog() {
+      const saved = loadSettings();
+      return {
+        pb: null,
+        pbUrl: saved.pbUrl || "",
+        compress: saved.compress !== false,
+        keepOriginal: !!saved.keepOriginal,
+        maxWidth: saved.maxWidth || 1920,
+        live: false,
+        loading: true,
+        error: "",
+        photos: [],
+        tags: [],
+        query: "",
+        activeTag: null,
+        dateFilter: "all",
+        viewMode: "grid",
+        selected: new Set(),
+        showUpload: false,
+        showBatch: false,
+        showSettings: false,
+        batchMode: "rename",
+        batchTitle: "",
+        batchTitleNumber: true,
+        batchTagIds: [],
+        pending: [],
+        uploadTagIds: [],
+        newTagName: "",
+        uploading: false,
+        uploadProgress: "",
+        lightbox: null,
+        preferCamera: false,
+
+        get filtered() {
+          const q = this.query.trim().toLowerCase();
+          const now = Date.now();
+          return this.photos.filter((p) => {
+            if (this.activeTag) {
+              const ids = Array.isArray(p.tags) ? p.tags.map((t) => (typeof t === "string" ? t : t.id)) : [];
+              if (!ids.includes(this.activeTag)) return false;
+            }
+            if (this.dateFilter !== "all") {
+              const t = new Date(p.taken_at || p.created).getTime();
+              const days = this.dateFilter === "today" ? 1 : this.dateFilter === "7d" ? 7 : 30;
+              if (now - t > days * 86400000) return false;
+            }
+            if (!q) return true;
+            const tagNames = this.photoTags(p).map((t) => t.name.toLowerCase()).join(" ");
+            const when = this.formatWhen(p, true).toLowerCase();
+            return (p.title || "").toLowerCase().includes(q) || tagNames.includes(q) || when.includes(q);
+          });
+        },
+
+        get timelineGroups() {
+          const map = new Map();
+          for (const p of this.filtered) {
+            const d = new Date(p.taken_at || p.created);
+            const key = isNaN(d) ? "onbekend" : d.toISOString().slice(0, 10);
+            if (!map.has(key)) {
+              const label = key === "onbekend"
+                ? "Onbekende datum"
+                : d.toLocaleDateString("nl-NL", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+              map.set(key, { key, label, items: [], sort: isNaN(d) ? 0 : d.getTime() });
+            }
+            map.get(key).items.push(p);
+          }
+          return [...map.values()].sort((a, b) => b.sort - a.sort);
+        },
+
+        async init() {
+          try {
+            this.pb = new PocketBase(this.pbUrl || window.location.origin);
+            this.pb.autoCancellation(false);
+            await Promise.all([this.loadTags(), this.loadPhotos()]);
+            await this.subscribe();
+          } catch (err) {
+            console.error(err);
+            this.error = "Kan PocketBase niet bereiken. Check de Server-URL of of Docker draait.";
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        async loadTags() {
+          const list = await this.pb.collection("tags").getFullList({ sort: "name" });
+          this.tags = list;
+        },
+
+        async loadPhotos() {
+          const list = await this.pb.collection("photos").getFullList({
+            sort: "-taken_at,-created",
+            expand: "tags",
+          });
+          this.photos = list;
+        },
+
+        async subscribe() {
+          try {
+            await this.pb.collection("photos").subscribe("*", async (e) => {
+              if (e.action === "create") {
+                try {
+                  const full = await this.pb.collection("photos").getOne(e.record.id, { expand: "tags" });
+                  this.photos = [full, ...this.photos.filter((p) => p.id !== full.id)];
+                } catch {
+                  this.photos = [e.record, ...this.photos.filter((p) => p.id !== e.record.id)];
+                }
+              } else if (e.action === "update") {
+                try {
+                  const full = await this.pb.collection("photos").getOne(e.record.id, { expand: "tags" });
+                  this.photos = this.photos.map((p) => (p.id === full.id ? full : p));
+                } catch {
+                  this.photos = this.photos.map((p) => (p.id === e.record.id ? { ...p, ...e.record } : p));
+                }
+              } else if (e.action === "delete") {
+                this.photos = this.photos.filter((p) => p.id !== e.record.id);
+                this.selected.delete(e.record.id);
+                this.selected = new Set(this.selected);
+              }
+            });
+            await this.pb.collection("tags").subscribe("*", async () => {
+              await this.loadTags();
+            });
+            this.live = true;
+          } catch (err) {
+            console.warn("Realtime niet beschikbaar", err);
+            this.live = false;
+          }
+        },
+
+        saveSettings() {
+          localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+              pbUrl: this.pbUrl.trim(),
+              compress: this.compress,
+              keepOriginal: this.keepOriginal,
+              maxWidth: this.maxWidth,
+            })
+          );
+          location.reload();
+        },
+
+        openUploader(camera = false) {
+          this.preferCamera = camera;
+          this.showUpload = true;
+          this.error = "";
+        },
+
+        async onFiles(ev) {
+          const files = [...(ev.target.files || [])];
+          ev.target.value = "";
+          for (const file of files) {
+            if (!file.type.startsWith("image/")) continue;
+            const preview = URL.createObjectURL(file);
+            let exif = {};
+            try {
+              exif = (await exifr.parse(file, { gps: true })) || {};
+            } catch (_) {}
+            const taken = exif.DateTimeOriginal || exif.CreateDate || null;
+            const lat = exif.latitude ?? null;
+            const lon = exif.longitude ?? null;
+            const base = file.name.replace(/\.[^.]+$/, "") || "foto";
+            this.pending.push({
+              key: `${file.name}-${file.size}-${Math.random()}`,
+              file,
+              preview,
+              title: base,
+              taken_at: taken ? new Date(taken).toISOString() : null,
+              latitude: lat,
+              longitude: lon,
+              width: exif.ImageWidth || null,
+              height: exif.ImageHeight || null,
+              metaLabel: [
+                `${(file.size / 1024).toFixed(0)} KB`,
+                taken ? new Date(taken).toLocaleString("nl-NL") : "geen EXIF-datum",
+                lat != null ? `${lat.toFixed(4)}, ${lon.toFixed(4)}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            });
+          }
+        },
+
+        toggleUploadTag(id) {
+          if (this.uploadTagIds.includes(id)) {
+            this.uploadTagIds = this.uploadTagIds.filter((x) => x !== id);
+          } else {
+            this.uploadTagIds = [...this.uploadTagIds, id];
+          }
+        },
+
+        async createAndSelectTag() {
+          const name = this.newTagName.trim();
+          if (!name) return;
+          const existing = this.tags.find((t) => t.name.toLowerCase() === name.toLowerCase());
+          if (existing) {
+            if (!this.uploadTagIds.includes(existing.id)) this.uploadTagIds.push(existing.id);
+            this.newTagName = "";
+            return;
+          }
+          const color = TAG_COLORS[this.tags.length % TAG_COLORS.length];
+          const tag = await this.pb.collection("tags").create({ name, color });
+          this.tags = [...this.tags, tag].sort((a, b) => a.name.localeCompare(b.name));
+          this.uploadTagIds = [...this.uploadTagIds, tag.id];
+          this.newTagName = "";
+        },
+
+        async createAndSelectBatchTag() {
+          const name = this.newTagName.trim();
+          if (!name) return;
+          const existing = this.tags.find((t) => t.name.toLowerCase() === name.toLowerCase());
+          if (existing) {
+            if (!this.batchTagIds.includes(existing.id)) this.batchTagIds.push(existing.id);
+            this.newTagName = "";
+            return;
+          }
+          const color = TAG_COLORS[this.tags.length % TAG_COLORS.length];
+          const tag = await this.pb.collection("tags").create({ name, color });
+          this.tags = [...this.tags, tag].sort((a, b) => a.name.localeCompare(b.name));
+          this.batchTagIds = [...this.batchTagIds, tag.id];
+          this.newTagName = "";
+        },
+
+        async compressImage(file, maxW) {
+          const bitmap = await createImageBitmap(file);
+          const scale = Math.min(1, maxW / bitmap.width);
+          if (scale >= 1 && file.type === "image/jpeg") {
+            return { blob: file, width: bitmap.width, height: bitmap.height, compressed: false };
+          }
+          const w = Math.round(bitmap.width * scale);
+          const h = Math.round(bitmap.height * scale);
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(bitmap, 0, 0, w, h);
+          bitmap.close();
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+          return { blob, width: w, height: h, compressed: scale < 1 || file.type !== "image/jpeg" };
+        },
+
+        async uploadAll() {
+          if (!this.pending.length) return;
+          this.uploading = true;
+          this.error = "";
+          let done = 0;
+          try {
+            for (const item of [...this.pending]) {
+              this.uploadProgress = `${done + 1}/${this.pending.length}`;
+              const form = new FormData();
+              form.set("title", item.title || "foto");
+              if (item.taken_at) form.set("taken_at", item.taken_at);
+              if (item.latitude != null) form.set("latitude", String(item.latitude));
+              if (item.longitude != null) form.set("longitude", String(item.longitude));
+              for (const id of this.uploadTagIds) form.append("tags", id);
+
+              let uploadFile = item.file;
+              let width = item.width;
+              let height = item.height;
+              let compressed = false;
+
+              if (this.compress) {
+                const result = await this.compressImage(item.file, this.maxWidth);
+                uploadFile = new File([result.blob], (item.title || "foto") + ".jpg", { type: "image/jpeg" });
+                width = result.width;
+                height = result.height;
+                compressed = result.compressed;
+                if (this.keepOriginal && compressed) {
+                  form.set("original", item.file);
+                }
+              }
+
+              form.set("image", uploadFile);
+              form.set("compressed", compressed ? "true" : "false");
+              if (width) form.set("width", String(width));
+              if (height) form.set("height", String(height));
+              form.set("file_size", String(uploadFile.size));
+
+              await this.pb.collection("photos").create(form);
+              URL.revokeObjectURL(item.preview);
+              this.pending = this.pending.filter((p) => p.key !== item.key);
+              done++;
+            }
+            this.showUpload = false;
+            this.uploadTagIds = [];
+          } catch (err) {
+            console.error(err);
+            this.error = err?.message || "Upload mislukt";
+          } finally {
+            this.uploading = false;
+            this.uploadProgress = "";
+          }
+        },
+
+        thumbUrl(photo, thumb = "400x400") {
+          if (!photo?.image) return "";
+          try {
+            return this.pb.files.getURL(photo, photo.image, { thumb });
+          } catch {
+            return this.pb.files.getUrl(photo, photo.image, { thumb });
+          }
+        },
+
+        fileUrl(photo) {
+          if (!photo?.image) return "";
+          try {
+            return this.pb.files.getURL(photo, photo.image);
+          } catch {
+            return this.pb.files.getUrl(photo, photo.image);
+          }
+        },
+
+        photoTags(photo) {
+          if (photo.expand?.tags) return photo.expand.tags;
+          if (!Array.isArray(photo.tags)) return [];
+          return photo.tags
+            .map((id) => (typeof id === "object" ? id : this.tags.find((t) => t.id === id)))
+            .filter(Boolean);
+        },
+
+        formatWhen(photo, long = false) {
+          const raw = photo.taken_at || photo.created;
+          if (!raw) return "";
+          const d = new Date(raw);
+          if (isNaN(d)) return "";
+          return long
+            ? d.toLocaleString("nl-NL", { dateStyle: "medium", timeStyle: "short" })
+            : d.toLocaleString("nl-NL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+        },
+
+        lightboxMeta() {
+          const p = this.lightbox;
+          if (!p) return "";
+          const parts = [];
+          if (p.width && p.height) parts.push(`${p.width}×${p.height}`);
+          if (p.file_size) parts.push(`${Math.round(p.file_size / 1024)} KB`);
+          if (p.compressed) parts.push("gecomprimeerd");
+          if (p.latitude != null && p.longitude != null && !(Number(p.latitude) === 0 && Number(p.longitude) === 0)) {
+            parts.push(`${Number(p.latitude).toFixed(5)}, ${Number(p.longitude).toFixed(5)}`);
+          }
+          const tags = this.photoTags(p).map((t) => t.name);
+          if (tags.length) parts.push(tags.join(", "));
+          return parts.join(" · ");
+        },
+
+        toggleSelect(id) {
+          if (this.selected.has(id)) this.selected.delete(id);
+          else this.selected.add(id);
+          this.selected = new Set(this.selected);
+        },
+
+        clearSelection() {
+          this.selected = new Set();
+        },
+
+        onPhotoClick(photo, ev) {
+          if (ev.shiftKey || this.selected.size > 0) {
+            this.toggleSelect(photo.id);
+            return;
+          }
+          this.openLightbox(photo);
+        },
+
+        openLightbox(photo) {
+          this.lightbox = photo;
+        },
+
+        openBatch(mode) {
+          this.batchMode = mode;
+          this.batchTitle = "";
+          this.batchTagIds = [];
+          this.showBatch = true;
+        },
+
+        toggleBatchTag(id) {
+          if (this.batchTagIds.includes(id)) {
+            this.batchTagIds = this.batchTagIds.filter((x) => x !== id);
+          } else {
+            this.batchTagIds = [...this.batchTagIds, id];
+          }
+        },
+
+        async applyBatch() {
+          const ids = [...this.selected];
+          try {
+            if (this.batchMode === "rename") {
+              const base = this.batchTitle.trim() || "foto";
+              let i = 1;
+              for (const id of ids) {
+                const title = this.batchTitleNumber ? `${base}-${i++}` : base;
+                await this.pb.collection("photos").update(id, { title });
+              }
+            } else {
+              for (const id of ids) {
+                const photo = this.photos.find((p) => p.id === id);
+                const current = Array.isArray(photo?.tags)
+                  ? photo.tags.map((t) => (typeof t === "string" ? t : t.id))
+                  : [];
+                const merged = [...new Set([...current, ...this.batchTagIds])];
+                await this.pb.collection("photos").update(id, { tags: merged });
+              }
+            }
+            this.showBatch = false;
+            this.clearSelection();
+          } catch (err) {
+            this.error = err?.message || "Batch update mislukt";
+          }
+        },
+
+        async deleteSelected() {
+          if (!confirm(`${this.selected.size} foto('s) verwijderen?`)) return;
+          try {
+            for (const id of [...this.selected]) {
+              await this.pb.collection("photos").delete(id);
+            }
+            this.clearSelection();
+          } catch (err) {
+            this.error = err?.message || "Verwijderen mislukt";
+          }
+        },
+      };
+    };
+  </script>
+</body>
+</html>
