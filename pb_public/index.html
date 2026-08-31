@@ -144,7 +144,7 @@
         class="rounded-lg border border-ink-line px-3 py-2 text-sm text-paper-muted transition hover:border-paper-dim hover:text-paper"
         title="Instellingen"
       >
-        Server
+        Instellingen
       </button>
       <button
         type="button"
@@ -471,10 +471,9 @@
   <div x-show="showSettings" class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-ink/80 backdrop-blur-sm" @click="showSettings = false"></div>
     <div class="relative w-full max-w-md rounded-2xl border border-ink-line bg-ink-soft p-5 animate-rise" @click.stop>
-      <h2 class="font-display text-xl font-700">Server</h2>
-      <p class="mt-1 text-sm text-paper-muted">PocketBase-URL. Laat leeg voor dezelfde origin (aanbevolen via Docker).</p>
-      <input type="url" x-model="pbUrl" placeholder="http://192.168.x.x:8090" class="mt-4 w-full rounded-lg border border-ink-line bg-ink px-3 py-2 text-sm outline-none focus:border-copper" />
-      <label class="mt-3 flex items-center gap-2 text-sm text-paper-muted">
+      <h2 class="font-display text-xl font-700">Instellingen</h2>
+      <p class="mt-1 text-sm text-paper-muted">Upload- en compressie-opties.</p>
+      <label class="mt-4 flex items-center gap-2 text-sm text-paper-muted">
         Max breedte compressie
         <input type="number" min="640" max="4096" step="80" x-model.number="maxWidth" class="ml-auto w-24 rounded-lg border border-ink-line bg-ink px-2 py-1 text-sm" />
       </label>
@@ -494,7 +493,12 @@
 
     function loadSettings() {
       try {
-        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+        if (saved.pbUrl) {
+          delete saved.pbUrl;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+        }
+        return saved;
       } catch {
         return {};
       }
@@ -504,7 +508,6 @@
       const saved = loadSettings();
       return {
         pb: null,
-        pbUrl: saved.pbUrl || "",
         compress: saved.compress !== false,
         keepOriginal: !!saved.keepOriginal,
         maxWidth: saved.maxWidth || 1920,
@@ -572,13 +575,13 @@
 
         async init() {
           try {
-            this.pb = new PocketBase(this.pbUrl || window.location.origin);
+            this.pb = new PocketBase(window.location.origin);
             this.pb.autoCancellation(false);
             await Promise.all([this.loadTags(), this.loadPhotos()]);
             await this.subscribe();
           } catch (err) {
             console.error(err);
-            this.error = "Kan PocketBase niet bereiken. Check de Server-URL of of Docker draait.";
+            this.error = "Kan PocketBase niet bereiken. Check of de server draait en of je de app via de PocketBase-URL opent.";
           } finally {
             this.loading = false;
           }
@@ -634,7 +637,6 @@
           localStorage.setItem(
             STORAGE_KEY,
             JSON.stringify({
-              pbUrl: this.pbUrl.trim(),
               compress: this.compress,
               keepOriginal: this.keepOriginal,
               maxWidth: this.maxWidth,
