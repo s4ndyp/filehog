@@ -581,23 +581,31 @@
             await this.subscribe();
           } catch (err) {
             console.error(err);
-            this.error = "Kan PocketBase niet bereiken. Check of de server draait en of je de app via de PocketBase-URL opent.";
+            const detail = err?.response?.message || err?.message;
+            this.error = detail
+              ? `PocketBase-fout: ${detail}`
+              : "Kan PocketBase niet bereiken. Check of de server draait en of je de app via de PocketBase-URL opent.";
           } finally {
             this.loading = false;
           }
         },
 
         async loadTags() {
-          const list = await this.pb.collection("tags").getFullList({ sort: "name" });
+          const list = await this.pb.collection("tags").getFullList({ batch: 500, sort: "name" });
           this.tags = list;
         },
 
         async loadPhotos() {
           const list = await this.pb.collection("photos").getFullList({
-            sort: "-taken_at,-created",
+            batch: 500,
             expand: "tags",
           });
-          this.photos = list;
+          this.photos = list.sort((a, b) => {
+            const tb = new Date(b.taken_at || 0).getTime() || 0;
+            const ta = new Date(a.taken_at || 0).getTime() || 0;
+            if (tb !== ta) return tb - ta;
+            return (b.id || "").localeCompare(a.id || "");
+          });
         },
 
         async subscribe() {
