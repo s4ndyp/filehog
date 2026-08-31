@@ -10,24 +10,22 @@ Homelab photo dump: open één URL op telefoon én desktop. Maak of kies een fot
 ## Snel starten
 
 ```bash
-cp .env.example .env
-# optioneel: PB_ADMIN_EMAIL / PB_ADMIN_PASSWORD zetten
-
-docker compose up -d --build
+docker build -t filehog .
+docker run -d --name filehog-pb -p 8080:8080 -v ./pb_data:/pb/pb_data filehog
 ```
 
 Open:
 
-- App: http://localhost:8090
-- Admin UI: http://localhost:8090/_/
+- App: http://localhost:8080
+- Admin UI: http://localhost:8080/_/
 
-Eerste keer zonder env-credentials: maak een admin via de UI, of:
+Eerste keer: maak een admin via de Admin UI, of:
 
 ```bash
-docker compose exec pocketbase /app/pocketbase superuser upsert jij@example.com 'sterk-wachtwoord'
+docker exec filehog-pb /pb/pocketbase superuser upsert jij@example.com 'sterk-wachtwoord'
 ```
 
-Op je homelab: map poort 8090 door (of via Tailscale/VPN) en open dezelfde URL op telefoon + desktop.
+Op je homelab: map poort 8080 door (of via Tailscale/VPN) en open dezelfde URL op telefoon + desktop. De app praat altijd met PocketBase op dezelfde origin als de pagina — open dus altijd de app via de PocketBase-server, niet als los HTML-bestand.
 
 ## Collecties (via migratie)
 
@@ -49,13 +47,13 @@ API-regels staan open (`""`) zodat telefoon/desktop zonder login kunnen uploaden
 
 ## Config in de app
 
-Rechtsboven **Server**: PocketBase-URL (leeg = zelfde origin) en max compressiebreedte. Opgeslagen in `localStorage`.
+Rechtsboven **Instellingen**: max compressiebreedte. Opgeslagen in `localStorage`.
 
 ## Development zonder Docker
 
 ```bash
 # binary van https://github.com/pocketbase/pocketbase/releases
-./pocketbase serve --http=0.0.0.0:8090
+./pocketbase serve --http=0.0.0.0:8080
 ```
 
 `pb_migrations/` en `pb_public/` worden automatisch meegenomen vanuit de werkdirectory.
